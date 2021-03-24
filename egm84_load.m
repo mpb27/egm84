@@ -19,7 +19,9 @@ assert((num_n+1)*(num_m+1) == length(coeffs));
 C = @(n,m) coeffs( m*(num_n+1) - m*(m+1)/2 + n + 1 );
 
 % Check against a few known coefficients from PDF.
-ASSERT_C = @(n,m,v) assert(C(n,m) == v, 'Coefficient C(%d,%d) is incorrect.', n, m);
+ASSERT_C = @(n,m,v) ...
+    assert(C(n,m) == v, 'Coefficient C(%d,%d) is incorrect.', n, m);
+
 ASSERT_C( 2, 0, -0.48416685E-03)
 ASSERT_C( 3, 0, +0.95706390E-06)
 ASSERT_C(18, 0, +0.10196218E-07)
@@ -31,7 +33,9 @@ ASSERT_C(18,18, +0.11121796E-08)
 S = @(n,m) coeffs( 16471 + (m-1)*(num_n+1) - (m-1)*m/2 - m + n + 1 );
 
 % Check against a few known coefficients from PDF.
-ASSERT_S = @(n,m,v) assert(S(n,m) == v, 'Coefficient S(%d,%d) is incorrect.', n, m);
+ASSERT_S = @(n,m,v) ...
+    assert(S(n,m) == v, 'Coefficient S(%d,%d) is incorrect.', n, m);
+
 ASSERT_S( 1, 1,  0.0);
 ASSERT_S( 2, 2, -0.13979548E-05)
 ASSERT_S( 3, 3, +0.14152388E-05)
@@ -43,7 +47,34 @@ ASSERT_S(18,18, -0.94806182E-08)
 
 %% Compute WGS-84 Geoid Height (pg 220).
 
+% Distance from the earth's geocentric center.
+r = 6371008.7714;
 
+% Setup constants.
+GM = 3986005E+08;
+a = 6378137;
+
+% Normalized Legendre polynomial. (4-3) 
+%  - Implemented as a recursive funtion from PDF 44310926 pg 14..17
+% (see bottom of script for function)
+
+% Gamma, theoretical gravity.
+gamma_e = 978032.67714;
+k = 0.00193185138639;
+e2 = 0.00669437999013;
+gamma = @(lat) gamma_e * (1 + k*sin(lat)^2) / sqrt(1 - e2*sin(lat)^2);
+
+Nxx = @(n,m,lat,lon) ...
+    (a/r)^n * ( C(n,m)*cos(m*lon) + S(n,m)*sin(m*lon) ) * Pnm(n,m,sin(lat));
+Nx  = @(n,lat,lon) ...
+    sum(arrayfun(@(m) Nxx(n,m,lat,lon), 0:n));  % m = 0..n
+N   = @(lat,lon) ...
+    GM / (r*gamma(lat)) ...
+    * sum(arrayfun(@(n) Nx(n,lat,lon), 2:18)); % n = 2..18
+
+U   = @(lat,lon) ...
+    GM / r ...
+    * sum(arrayfun(@(n) Nx(n,lat,lon), 2:18)); % n = 2..18
 
 
 
@@ -78,6 +109,24 @@ Sindex = @(n,m) 16471 + (m-1)*(num_n+1) - (m-1)*(m)/2 - m + (n-1) + 1 + 1;
 
 
 
-
+function x  = Pnm(n,m,sin_lat)
+    v = sin_lat;
+    if (n == 0 && m == 0)                       % (II.18)
+        x = 1;  
+    elseif (n == 1 && m == 1)                   % (II.19)
+        x = sqrt(1-v^2) * sqrt(3) * 1.0;
+    elseif (n == m)                             % (II.20)
+        x = sqrt(1-v^2) * sqrt((2*m+1)/(2*m)) * Pnm(m-1,m-1,v);
+    elseif ((n - m) == 1)                       % (II.21)
+        x = v * sqrt(2*m+1) * Pnm(m,m,v);
+    else                                        % (II.22)
+        e1 = sqrt( (2*n+1)/(2*n-1) * (n-m)/(n+m) );
+        e2 = sqrt( (2*n+1)/(2*n-3) * (n-m)/(n+m) * (n-m-1)/(n+m-1) );        
+        x = 1/(n-m)*( ...
+              (2*n-1)*v*e1*Pnm(n-1,m,v)  ...
+            - (n+m-1)*e2*Pnm(n-2,m,v)    ...
+            );
+    end
+end
 
 
